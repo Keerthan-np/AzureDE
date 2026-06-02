@@ -1,0 +1,76 @@
+{
+	"name": "df_incremental_bronze_to_silver",
+	"properties": {
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "ds_adls_bronze_parquetdynamic",
+						"type": "DatasetReference"
+					},
+					"name": "BronzeIncrementalSource"
+				}
+			],
+			"sinks": [
+				{
+					"linkedService": {
+						"referenceName": "ls_nimble _broze",
+						"type": "LinkedServiceReference"
+					},
+					"name": "SilverIncrementalDeltaSink",
+					"rejectedDataLinkedService": {
+						"referenceName": "ls_nimble _broze",
+						"type": "LinkedServiceReference"
+					}
+				}
+			],
+			"transformations": [
+				{
+					"name": "CleanAndFormatData"
+				},
+				{
+					"name": "DeduplicateRecords"
+				},
+				{
+					"name": "AlterRow1"
+				}
+			],
+			"scriptLines": [
+				"parameters{",
+				"     p_TableName as string ('tbl_client'),",
+				"     p_SilverTableName as string ('silver_client'),",
+				"     p_ProcessDate as string ('2026-05-25')",
+				"}",
+				"source(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false,",
+				"     format: 'parquet',",
+				"     wildcardPaths:[(concat($p_TableName, '/', $p_ProcessDate, '*/*.parquet'))]) ~> BronzeIncrementalSource",
+				"BronzeIncrementalSource derive(each(match(type=='string'), $$ = iifNull(trim(toString($$)), 'N/A'))) ~> CleanAndFormatData",
+				"CleanAndFormatData aggregate(groupBy(Id = byName('Id')),",
+				"     each(match(name!='Id'), $$ = first($$))) ~> DeduplicateRecords",
+				"DeduplicateRecords alterRow(upsertIf(true())) ~> AlterRow1",
+				"AlterRow1 sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     format: 'delta',",
+				"     fileSystem: 'silver',",
+				"     folderPath: ($p_SilverTableName),",
+				"     mergeSchema: false,",
+				"     autoCompact: false,",
+				"     optimizedWrite: false,",
+				"     vacuum: 0,",
+				"     deletable: false,",
+				"     insertable: true,",
+				"     updateable: false,",
+				"     upsertable: true,",
+				"     keys:['Id'],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true) ~> SilverIncrementalDeltaSink"
+			]
+		}
+	}
+}

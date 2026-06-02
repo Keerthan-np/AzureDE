@@ -1,0 +1,36 @@
+{
+	"name": "ds_adls_bronze_parquetdynamic",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_nimble _broze",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"sink_FolderName": {
+				"type": "string"
+			},
+			"current_Date": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@concat(dataset().current_Date, '_', dataset().sink_FolderName, '.parquet')",
+					"type": "Expression"
+				},
+				"folderPath": {
+					"value": "@concat(dataset().sink_FolderName, '/', dataset().current_Date)",
+					"type": "Expression"
+				},
+				"fileSystem": "bronze"
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

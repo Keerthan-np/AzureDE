@@ -1,0 +1,29 @@
+{
+	"name": "ds_sql_watermark",
+	"properties": {
+		"description": "water mark table for last upadate",
+		"linkedServiceName": {
+			"referenceName": "ls_nimble_oltp",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "TableName",
+				"type": "varchar"
+			},
+			{
+				"name": "LastModifiedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": "tbl_watermark"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

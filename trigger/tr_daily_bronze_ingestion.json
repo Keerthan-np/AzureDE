@@ -1,0 +1,29 @@
+{
+	"name": "tr_daily_bronze_ingestion",
+	"properties": {
+		"annotations": [],
+		"runtimeState": "Started",
+		"pipelines": [
+			{
+				"pipelineReference": {
+					"referenceName": "pl_master_bronze_ingestion",
+					"type": "PipelineReference"
+				}
+			}
+		],
+		"type": "ScheduleTrigger",
+		"typeProperties": {
+			"recurrence": {
+				"frequency": "Day",
+				"interval": 1,
+				"startTime": "2026-05-22T05:07:00",
+				"timeZone": "India Standard Time",
+				"schedule": {
+					"hours": [
+						11
+					]
+				}
+			}
+		}
+	}
+}

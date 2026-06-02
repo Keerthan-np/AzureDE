@@ -1,0 +1,15 @@
+{
+	"name": "adf-nimble-de",
+	"properties": {
+		"trustModeClaimForMi": {
+			"value": "Disabled",
+			"editable": true
+		}
+	},
+	"location": "centralindia",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "5d41914d-a1d8-466a-8f96-f5fdf022773e",
+		"tenantId": "12099f99-c02d-4aa5-a767-04eafcc4ce68"
+	}
+}

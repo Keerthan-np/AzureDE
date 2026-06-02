@@ -1,0 +1,89 @@
+{
+	"name": "pl_master_bronze_ingestion",
+	"properties": {
+		"activities": [
+			{
+				"name": "LKP_GetActiveTables",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT SourceTableName, WatermarkColumn FROM tbl_nimblecontrollist WHERE IsActive = 1",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "ds_sql_source_tables",
+						"type": "DatasetReference",
+						"parameters": {
+							"src_TableName": {
+								"value": "tbl_nimblecontrollist",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "FE_LoopThroughTables",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "LKP_GetActiveTables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LKP_GetActiveTables').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "exec_child_ingestion",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"policy": {
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "pl_dunamic_nimble",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"TableName": {
+										"value": "@{item().SourceTableName}",
+										"type": "Expression"
+									},
+									"WatermarkColumn": {
+										"value": "@{item().WatermarkColumn}",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2026-05-25T18:42:21Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

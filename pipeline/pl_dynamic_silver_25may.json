@@ -1,0 +1,111 @@
+{
+	"name": "pl_dynamic_silver_25may",
+	"properties": {
+		"activities": [
+			{
+				"name": "lkp_get_active_tables",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "SELECT SourceTableName, SilverTableName FROM tbl_nimblecontrollist",
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "ds_sql_source_tables",
+						"type": "DatasetReference",
+						"parameters": {
+							"src_TableName": {
+								"value": "tbl_nimblecontrollist",
+								"type": "Expression"
+							}
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "fe_loop_tables",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "lkp_get_active_tables",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('lkp_get_active_tables').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "df_run_incremental_load",
+							"type": "ExecuteDataFlow",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"dataflow": {
+									"referenceName": "df_incremental_bronze_to_silver",
+									"type": "DataFlowReference",
+									"parameters": {
+										"p_TableName": {
+											"value": "'@{item().SourceTableName}'",
+											"type": "Expression"
+										},
+										"p_SilverTableName": {
+											"value": "'@{item().SilverTableName}'",
+											"type": "Expression"
+										},
+										"p_ProcessDate": {
+											"value": "'@{utcNow('yyyy-MM-dd')}'",
+											"type": "Expression"
+										}
+									},
+									"datasetParameters": {
+										"BronzeIncrementalSource": {
+											"sink_FolderName": {
+												"value": "@item().SilverTableName",
+												"type": "Expression"
+											},
+											"current_Date": "@utcNow('yyyy-MM-dd')"
+										}
+									}
+								},
+								"compute": {
+									"coreCount": 8,
+									"computeType": "General"
+								},
+								"traceLevel": "Fine"
+							}
+						}
+					]
+				}
+			}
+		],
+		"annotations": [],
+		"lastPublishTime": "2026-05-25T18:42:21Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

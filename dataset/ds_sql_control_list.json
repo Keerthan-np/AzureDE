@@ -1,0 +1,35 @@
+{
+	"name": "ds_sql_control_list",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_nimble_oltp",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "ControlID",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "SourceTableName",
+				"type": "varchar"
+			},
+			{
+				"name": "WatermarkColumn",
+				"type": "varchar"
+			},
+			{
+				"name": "IsActive",
+				"type": "bit"
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": "tbl_Nimblecontrollist"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

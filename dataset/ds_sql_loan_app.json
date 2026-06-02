@@ -1,0 +1,48 @@
+{
+	"name": "ds_sql_loan_app",
+	"properties": {
+		"description": "source oltp loan application table ",
+		"linkedServiceName": {
+			"referenceName": "ls_nimble_oltp",
+			"type": "LinkedServiceReference"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "appID",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "productcode",
+				"type": "varchar"
+			},
+			{
+				"name": "wfcode",
+				"type": "varchar"
+			},
+			{
+				"name": "loanAmount",
+				"type": "decimal",
+				"precision": 10,
+				"scale": 2
+			},
+			{
+				"name": "applstatus",
+				"type": "varchar"
+			},
+			{
+				"name": "UpdatedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": "tbl_loanapplication"
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

@@ -1,0 +1,58 @@
+{
+	"name": "ds_sql_source_tables",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "ls_nimble_oltp",
+			"type": "LinkedServiceReference"
+		},
+		"parameters": {
+			"src_TableName": {
+				"type": "string"
+			}
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": [
+			{
+				"name": "applicationid",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "stageid",
+				"type": "int",
+				"precision": 10
+			},
+			{
+				"name": "applicationstatus",
+				"type": "varchar"
+			},
+			{
+				"name": "createdon",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "statuson",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			},
+			{
+				"name": "UpdatedDate",
+				"type": "datetime",
+				"precision": 23,
+				"scale": 3
+			}
+		],
+		"typeProperties": {
+			"schema": "dbo",
+			"table": {
+				"value": "@dataset().src_TableName",
+				"type": "Expression"
+			}
+		}
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}
