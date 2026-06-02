@@ -1,0 +1,1227 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "adf-nimble-de"
+		},
+		"ls_nimble _broze_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'ls_nimble _broze'"
+		},
+		"ls_nimble_oltp_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'ls_nimble_oltp'"
+		},
+		"ls_nimble _broze_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://stnimblede.dfs.core.windows.net/"
+		},
+		"ls_nimble_oltp_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "sql-nimble-de.database.windows.net"
+		},
+		"ls_nimble_oltp_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "nimble"
+		},
+		"ls_nimble_oltp_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "nimbleadmin"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_dunamic_nimble')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Lookup_OldWatermark",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT LastModifiedDate FROM tbl_watermark WHERE TableName = '@{pipeline().parameters.TableName}'",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_watermark",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "Lookup_NewWatermark",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT MAX(@{pipeline().parameters.WatermarkColumn}) as NewTime FROM @{pipeline().parameters.TableName}",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_source_tables",
+								"type": "DatasetReference",
+								"parameters": {
+									"src_TableName": "@{pipeline().parameters.TableName}"
+								}
+							}
+						}
+					},
+					{
+						"name": "CopyDataActivity",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "Lookup_OldWatermark",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "Lookup_NewWatermark",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT * FROM @{pipeline().parameters.TableName}\nWHERE @{pipeline().parameters.WatermarkColumn} > '@{activity('Lookup_OldWatermark').output.firstRow.LastModifiedDate}'\nAND @{pipeline().parameters.WatermarkColumn} <= '@{activity('Lookup_NewWatermark').output.firstRow.NewTime}'",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"sink": {
+								"type": "ParquetSink",
+								"storeSettings": {
+									"type": "AzureBlobFSWriteSettings"
+								},
+								"formatSettings": {
+									"type": "ParquetWriteSettings"
+								}
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "ds_sql_source_tables",
+								"type": "DatasetReference",
+								"parameters": {
+									"src_TableName": "@{pipeline().parameters.TableName}"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "ds_adls_bronze_parquetdynamic",
+								"type": "DatasetReference",
+								"parameters": {
+									"sink_FolderName": "@{pipeline().parameters.TableName}",
+									"current_Date": {
+										"value": "@utcnow()",
+										"type": "Expression"
+									}
+								}
+							}
+						]
+					},
+					{
+						"name": "Update_Watermark",
+						"type": "Script",
+						"dependsOn": [
+							{
+								"activity": "CopyDataActivity",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "ls_nimble_oltp",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": {
+										"value": "UPDATE tbl_watermark \nSET LastModifiedDate = '@{activity('Lookup_NewWatermark').output.firstRow.NewTime}' \nWHERE TableName = '@{pipeline().parameters.TableName}'",
+										"type": "Expression"
+									}
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"parameters": {
+					"TableName": {
+						"type": "string"
+					},
+					"WatermarkColumn": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-05-21T17:06:26Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_sql_watermark')]",
+				"[concat(variables('factoryId'), '/datasets/ds_sql_source_tables')]",
+				"[concat(variables('factoryId'), '/datasets/ds_adls_bronze_parquetdynamic')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_dynamic_silver_25may')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "lkp_get_active_tables",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT SourceTableName, SilverTableName FROM tbl_nimblecontrollist",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_source_tables",
+								"type": "DatasetReference",
+								"parameters": {
+									"src_TableName": {
+										"value": "tbl_nimblecontrollist",
+										"type": "Expression"
+									}
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "fe_loop_tables",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "lkp_get_active_tables",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('lkp_get_active_tables').output.value",
+								"type": "Expression"
+							},
+							"isSequential": true,
+							"activities": [
+								{
+									"name": "df_run_incremental_load",
+									"type": "ExecuteDataFlow",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"dataflow": {
+											"referenceName": "df_incremental_bronze_to_silver",
+											"type": "DataFlowReference",
+											"parameters": {
+												"p_TableName": {
+													"value": "'@{item().SourceTableName}'",
+													"type": "Expression"
+												},
+												"p_SilverTableName": {
+													"value": "'@{item().SilverTableName}'",
+													"type": "Expression"
+												},
+												"p_ProcessDate": {
+													"value": "'@{utcNow('yyyy-MM-dd')}'",
+													"type": "Expression"
+												}
+											},
+											"datasetParameters": {
+												"BronzeIncrementalSource": {
+													"sink_FolderName": {
+														"value": "@item().SilverTableName",
+														"type": "Expression"
+													},
+													"current_Date": "@utcNow('yyyy-MM-dd')"
+												},
+												"SilverIncrementalDeltaSink": {}
+											}
+										},
+										"staging": {},
+										"compute": {
+											"coreCount": 8,
+											"computeType": "General"
+										},
+										"traceLevel": "Fine"
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-05-25T18:42:21Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_sql_source_tables')]",
+				"[concat(variables('factoryId'), '/dataflows/df_incremental_bronze_to_silver')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_master_bronze_ingestion')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "LKP_GetActiveTables",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": "SELECT SourceTableName, WatermarkColumn FROM tbl_nimblecontrollist WHERE IsActive = 1",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_source_tables",
+								"type": "DatasetReference",
+								"parameters": {
+									"src_TableName": {
+										"value": "tbl_nimblecontrollist",
+										"type": "Expression"
+									}
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "FE_LoopThroughTables",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "LKP_GetActiveTables",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('LKP_GetActiveTables').output.value",
+								"type": "Expression"
+							},
+							"activities": [
+								{
+									"name": "exec_child_ingestion",
+									"type": "ExecutePipeline",
+									"dependsOn": [],
+									"policy": {
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"pipeline": {
+											"referenceName": "pl_dunamic_nimble",
+											"type": "PipelineReference"
+										},
+										"waitOnCompletion": true,
+										"parameters": {
+											"TableName": {
+												"value": "@{item().SourceTableName}",
+												"type": "Expression"
+											},
+											"WatermarkColumn": {
+												"value": "@{item().WatermarkColumn}",
+												"type": "Expression"
+											}
+										}
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-05-25T18:42:21Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_sql_source_tables')]",
+				"[concat(variables('factoryId'), '/pipelines/pl_dunamic_nimble')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_nimble_de')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Lookup_OldWatermark",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT LastModifiedDate FROM tbl_watermark WHERE TableName = '@{pipeline().parameters.TableName}'",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_loan_app",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "Lookup_NewWatermark",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT MAX(@{pipeline().parameters.WatermarkColumn}) as NewTime FROM @{pipeline().parameters.TableName}",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "ds_sql_loan_app",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						}
+					},
+					{
+						"name": "cd_nimble",
+						"type": "Copy",
+						"dependsOn": [
+							{
+								"activity": "Lookup_OldWatermark",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							},
+							{
+								"activity": "Lookup_NewWatermark",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"sink": {
+								"type": "ParquetSink",
+								"storeSettings": {
+									"type": "AzureBlobFSWriteSettings"
+								},
+								"formatSettings": {
+									"type": "ParquetWriteSettings"
+								}
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "ds_sql_loan_app",
+								"type": "DatasetReference",
+								"parameters": {}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "ds_adls_bronze_parquet",
+								"type": "DatasetReference",
+								"parameters": {
+									"FolderPath": {
+										"value": "@pipeline().parameters.TableName",
+										"type": "Expression"
+									}
+								}
+							}
+						]
+					},
+					{
+						"name": "secuss_update",
+						"type": "Script",
+						"dependsOn": [
+							{
+								"activity": "cd_nimble",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "ls_nimble_oltp",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": {
+										"value": "UPDATE tbl_watermark \nSET LastModifiedDate = '@{activity('Lookup_NewWatermark').output.firstRow.NewTime}' \nWHERE TableName = '@{pipeline().parameters.TableName}'",
+										"type": "Expression"
+									}
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					},
+					{
+						"name": "Log_Failure",
+						"type": "Script",
+						"dependsOn": [
+							{
+								"activity": "cd_nimble",
+								"dependencyConditions": [
+									"Failed"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "ls_nimble_oltp",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": {
+										"value": "INSERT INTO tbl_pipelineLogs (PipelineName, TableName, Status, ErrorMessage)\nVALUES ('@{pipeline().Pipeline}', '@{pipeline().parameters.TableName}', 'FAILED', '@{activity('cd_nimble').error.message}')",
+										"type": "Expression"
+									}
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					},
+					{
+						"name": "Log_Success",
+						"type": "Script",
+						"dependsOn": [
+							{
+								"activity": "cd_nimble",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"linkedServiceName": {
+							"referenceName": "ls_nimble_oltp",
+							"type": "LinkedServiceReference"
+						},
+						"typeProperties": {
+							"scripts": [
+								{
+									"type": "Query",
+									"text": {
+										"value": "INSERT INTO tbl_pipelineLogs (\n    PipelineName, \n    TableName, \n    Status, \n    RowsRead, \n    RowsWritten\n)\nVALUES (\n    '@{pipeline().Pipeline}', \n    '@{pipeline().parameters.TableName}', \n    'SUCCESS', \n    @{activity('cd_nimble').output.rowsRead}, \n    @{activity('cd_nimble').output.rowsCopied}\n)",
+										"type": "Expression"
+									}
+								}
+							],
+							"scriptBlockExecutionTimeout": "02:00:00"
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"parameters": {
+					"TableName": {
+						"type": "string",
+						"defaultValue": "tbl_loanapplication"
+					},
+					"WatermarkColumn": {
+						"type": "string",
+						"defaultValue": "UpdatedDate"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2026-05-20T08:54:31Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_sql_loan_app')]",
+				"[concat(variables('factoryId'), '/datasets/ds_adls_bronze_parquet')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_adls_bronze_parquet')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "bronze layer to store source data ",
+				"linkedServiceName": {
+					"referenceName": "ls_nimble _broze",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"FolderPath": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"folderPath": {
+							"value": "@dataset().FolderPath",
+							"type": "Expression"
+						},
+						"fileSystem": "nimblebronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble _broze')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_adls_bronze_parquetdynamic')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_nimble _broze",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"sink_FolderName": {
+						"type": "string"
+					},
+					"current_Date": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "Parquet",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@concat(dataset().current_Date, '_', dataset().sink_FolderName, '.parquet')",
+							"type": "Expression"
+						},
+						"folderPath": {
+							"value": "@concat(dataset().sink_FolderName, '/', dataset().current_Date)",
+							"type": "Expression"
+						},
+						"fileSystem": "bronze"
+					},
+					"compressionCodec": "snappy"
+				},
+				"schema": []
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble _broze')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_sql_control_list')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_nimble_oltp",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "ControlID",
+						"type": "int",
+						"precision": 10
+					},
+					{
+						"name": "SourceTableName",
+						"type": "varchar"
+					},
+					{
+						"name": "WatermarkColumn",
+						"type": "varchar"
+					},
+					{
+						"name": "IsActive",
+						"type": "bit"
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "tbl_Nimblecontrollist"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_sql_loan_app')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "source oltp loan application table ",
+				"linkedServiceName": {
+					"referenceName": "ls_nimble_oltp",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "appID",
+						"type": "int",
+						"precision": 10
+					},
+					{
+						"name": "productcode",
+						"type": "varchar"
+					},
+					{
+						"name": "wfcode",
+						"type": "varchar"
+					},
+					{
+						"name": "loanAmount",
+						"type": "decimal",
+						"precision": 10,
+						"scale": 2
+					},
+					{
+						"name": "applstatus",
+						"type": "varchar"
+					},
+					{
+						"name": "UpdatedDate",
+						"type": "datetime",
+						"precision": 23,
+						"scale": 3
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "tbl_loanapplication"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_sql_source_tables')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_nimble_oltp",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"src_TableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "applicationid",
+						"type": "int",
+						"precision": 10
+					},
+					{
+						"name": "stageid",
+						"type": "int",
+						"precision": 10
+					},
+					{
+						"name": "applicationstatus",
+						"type": "varchar"
+					},
+					{
+						"name": "createdon",
+						"type": "datetime",
+						"precision": 23,
+						"scale": 3
+					},
+					{
+						"name": "statuson",
+						"type": "datetime",
+						"precision": 23,
+						"scale": 3
+					},
+					{
+						"name": "UpdatedDate",
+						"type": "datetime",
+						"precision": 23,
+						"scale": 3
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": {
+						"value": "@dataset().src_TableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_sql_watermark')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "water mark table for last upadate",
+				"linkedServiceName": {
+					"referenceName": "ls_nimble_oltp",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [
+					{
+						"name": "TableName",
+						"type": "varchar"
+					},
+					{
+						"name": "LastModifiedDate",
+						"type": "datetime",
+						"precision": 23,
+						"scale": 3
+					}
+				],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "tbl_watermark"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_sql_watermark_table')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "for dynamic",
+				"linkedServiceName": {
+					"referenceName": "ls_nimble_oltp",
+					"type": "LinkedServiceReference"
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": "tbl_watermark"
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble_oltp')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ls_nimble _broze')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "bronze layer nimble ",
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('ls_nimble _broze_properties_typeProperties_url')]",
+					"accountKey": {
+						"type": "SecureString",
+						"value": "[parameters('ls_nimble _broze_accountKey')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ls_nimble_oltp')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"description": "nimble oltp data base",
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"server": "[parameters('ls_nimble_oltp_properties_typeProperties_server')]",
+					"database": "[parameters('ls_nimble_oltp_properties_typeProperties_database')]",
+					"encrypt": "mandatory",
+					"trustServerCertificate": false,
+					"authenticationType": "SQL",
+					"userName": "[parameters('ls_nimble_oltp_properties_typeProperties_userName')]",
+					"password": {
+						"type": "SecureString",
+						"value": "[parameters('ls_nimble_oltp_password')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/tr_daily_bronze_ingestion')]",
+			"type": "Microsoft.DataFactory/factories/triggers",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"runtimeState": "Started",
+				"pipelines": [
+					{
+						"pipelineReference": {
+							"referenceName": "pl_master_bronze_ingestion",
+							"type": "PipelineReference"
+						},
+						"parameters": {}
+					}
+				],
+				"type": "ScheduleTrigger",
+				"typeProperties": {
+					"recurrence": {
+						"frequency": "Day",
+						"interval": 1,
+						"startTime": "2026-05-22T05:07:00",
+						"timeZone": "India Standard Time",
+						"schedule": {
+							"hours": [
+								11
+							]
+						}
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/pipelines/pl_master_bronze_ingestion')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_bronze_to_silver_delta')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "ds_adls_bronze_parquetdynamic",
+								"type": "DatasetReference"
+							},
+							"name": "BronzeParquetSource"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "ls_nimble _broze",
+								"type": "LinkedServiceReference"
+							},
+							"name": "SilverDeltaSink"
+						}
+					],
+					"transformations": [],
+					"scriptLines": [
+						"parameters{",
+						"     df_param_TableName as string ('tbl_client'),",
+						"     df_param_SilverTableName as string ('silver_client')",
+						"}",
+						"source(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false,",
+						"     format: 'parquet',",
+						"     wildcardPaths:[(concat($df_param_TableName, '/*/*.parquet'))]) ~> BronzeParquetSource",
+						"BronzeParquetSource sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     fileSystem: 'silver',",
+						"     folderPath: ($df_param_SilverTableName),",
+						"     deltaTruncate: true,",
+						"     mergeSchema: false,",
+						"     autoCompact: false,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable: false,",
+						"     insertable: true,",
+						"     updateable: false,",
+						"     upsertable: false,",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> SilverDeltaSink"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_adls_bronze_parquetdynamic')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble _broze')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/df_incremental_bronze_to_silver')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "ds_adls_bronze_parquetdynamic",
+								"type": "DatasetReference"
+							},
+							"name": "BronzeIncrementalSource"
+						}
+					],
+					"sinks": [
+						{
+							"linkedService": {
+								"referenceName": "ls_nimble _broze",
+								"type": "LinkedServiceReference"
+							},
+							"name": "SilverIncrementalDeltaSink",
+							"rejectedDataLinkedService": {
+								"referenceName": "ls_nimble _broze",
+								"type": "LinkedServiceReference"
+							}
+						}
+					],
+					"transformations": [
+						{
+							"name": "CleanAndFormatData"
+						},
+						{
+							"name": "DeduplicateRecords"
+						},
+						{
+							"name": "AlterRow1"
+						}
+					],
+					"scriptLines": [
+						"parameters{",
+						"     p_TableName as string ('tbl_client'),",
+						"     p_SilverTableName as string ('silver_client'),",
+						"     p_ProcessDate as string ('2026-05-25')",
+						"}",
+						"source(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     ignoreNoFilesFound: false,",
+						"     format: 'parquet',",
+						"     wildcardPaths:[(concat($p_TableName, '/', $p_ProcessDate, '*/*.parquet'))]) ~> BronzeIncrementalSource",
+						"BronzeIncrementalSource derive(each(match(type=='string'), $$ = iifNull(trim(toString($$)), 'N/A'))) ~> CleanAndFormatData",
+						"CleanAndFormatData aggregate(groupBy(Id = byName('Id')),",
+						"     each(match(name!='Id'), $$ = first($$))) ~> DeduplicateRecords",
+						"DeduplicateRecords alterRow(upsertIf(true())) ~> AlterRow1",
+						"AlterRow1 sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     format: 'delta',",
+						"     fileSystem: 'silver',",
+						"     folderPath: ($p_SilverTableName),",
+						"     mergeSchema: false,",
+						"     autoCompact: false,",
+						"     optimizedWrite: false,",
+						"     vacuum: 0,",
+						"     deletable: false,",
+						"     insertable: true,",
+						"     updateable: false,",
+						"     upsertable: true,",
+						"     keys:['Id'],",
+						"     umask: 0022,",
+						"     preCommands: [],",
+						"     postCommands: [],",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> SilverIncrementalDeltaSink"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/ds_adls_bronze_parquetdynamic')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_nimble _broze')]"
+			]
+		}
+	]
+}

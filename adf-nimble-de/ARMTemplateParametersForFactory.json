@@ -1,0 +1,27 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "adf-nimble-de"
+		},
+		"ls_nimble _broze_accountKey": {
+			"value": ""
+		},
+		"ls_nimble_oltp_password": {
+			"value": ""
+		},
+		"ls_nimble _broze_properties_typeProperties_url": {
+			"value": "https://stnimblede.dfs.core.windows.net/"
+		},
+		"ls_nimble_oltp_properties_typeProperties_server": {
+			"value": "sql-nimble-de.database.windows.net"
+		},
+		"ls_nimble_oltp_properties_typeProperties_database": {
+			"value": "nimble"
+		},
+		"ls_nimble_oltp_properties_typeProperties_userName": {
+			"value": "nimbleadmin"
+		}
+	}
+}
